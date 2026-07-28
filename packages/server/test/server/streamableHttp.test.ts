@@ -602,6 +602,41 @@ describe('Zod v4', () => {
 
             expect(onClosed).toHaveBeenCalledWith('test-session-456');
         });
+
+        it('should call onsessionclosed only once for concurrent DELETE requests', async () => {
+            let releaseClose!: () => void;
+            let closeStarted!: () => void;
+            const closeStartedPromise = new Promise<void>(resolve => {
+                closeStarted = resolve;
+            });
+            const onClosed = vi.fn(
+                () =>
+                    new Promise<void>(resolve => {
+                        releaseClose = resolve;
+                        closeStarted();
+                    })
+            );
+
+            const mcpServer = new McpServer({ name: 'test-server', version: '1.0.0' }, { capabilities: {} });
+            const transport = new WebStandardStreamableHTTPServerTransport({
+                sessionIdGenerator: () => 'test-session-789',
+                onsessionclosed: onClosed
+            });
+
+            await mcpServer.connect(transport);
+            await transport.handleRequest(createRequest('POST', TEST_MESSAGES.initialize));
+
+            const deleteRequest = () => createRequest('DELETE', undefined, { sessionId: 'test-session-789' });
+            const firstDelete = transport.handleRequest(deleteRequest());
+            await closeStartedPromise;
+            const secondDelete = transport.handleRequest(deleteRequest());
+
+            releaseClose();
+            const responses = await Promise.all([firstDelete, secondDelete]);
+
+            expect(responses.map(response => response.status)).toEqual([200, 200]);
+            expect(onClosed).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe('HTTPServerTransport - Event Store (Resumability)', () => {

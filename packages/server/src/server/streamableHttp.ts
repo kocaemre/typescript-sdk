@@ -250,6 +250,7 @@ export class WebStandardStreamableHTTPServerTransport implements Transport {
     private _eventStore?: EventStore;
     private _onsessioninitialized?: ((sessionId: string) => void | Promise<void>) | undefined;
     private _onsessionclosed?: ((sessionId: string) => void | Promise<void>) | undefined;
+    private _deleteSessionResponse?: Promise<Response>;
     private _allowedHosts?: string[];
     private _allowedOrigins?: string[];
     private _enableDnsRebindingProtection: boolean;
@@ -983,12 +984,20 @@ export class WebStandardStreamableHTTPServerTransport implements Transport {
             return protocolError;
         }
 
-        try {
-            await Promise.resolve(this._onsessionclosed?.(this.sessionId!));
-            return new Response(null, { status: 200 });
-        } finally {
-            await this.close();
+        if (this._deleteSessionResponse !== undefined) {
+            return this._deleteSessionResponse;
         }
+
+        this._deleteSessionResponse = (async () => {
+            try {
+                await Promise.resolve(this._onsessionclosed?.(this.sessionId!));
+                return new Response(null, { status: 200 });
+            } finally {
+                await this.close();
+            }
+        })();
+
+        return this._deleteSessionResponse;
     }
 
     /**
