@@ -49,6 +49,33 @@ Align everything on one Zod 4 version. When a transitive dependency pins another
 
 `npm ls zod` reporting a single version means the duplicate is gone and the error with it.
 
+## My tool inputSchema is empty / `Cannot read properties of null (reading '_def')`
+
+On v1, tool schemas are **raw shapes**, not Zod objects. Pass `{ name: z.string() }`
+to `server.tool()` and `registerTool()` on `@modelcontextprotocol/sdk` v1; do not pass
+`z.object({ name: z.string() })` there. Passing the v2-style Zod object to v1 surfaces
+as two misleading symptoms depending on the exact v1 release and API:
+
+- `tools/list` can fail with `Cannot read properties of null (reading '_def')`.
+- `tools/list` can publish an empty schema like `{"type":"object"}`, so clients strip
+  every argument and the tool handler receives an empty args object.
+
+```ts
+// v1 — correct: raw shape
+server.tool('greet', 'Greet a user', { name: z.string() }, async ({ name }) => ({
+    content: [{ type: 'text', text: `Hello, ${name}!` }]
+}));
+
+// v1 — wrong: this is the v2 shape
+server.tool('greet', 'Greet a user', z.object({ name: z.string() }), async ({ name }) => ({
+    content: [{ type: 'text', text: `Hello, ${name}!` }]
+}));
+```
+
+If you are moving to v2, make the opposite change: v2 expects Standard Schema objects,
+so wrap raw shapes with `z.object(...)`. The [upgrade guide](./migration/upgrade-to-v2.md#server-registration-api)
+shows the full registration rewrite.
+
 ## `ReferenceError: crypto is not defined`
 
 The OAuth client helpers sign and verify through the Web Crypto API at `globalThis.crypto`. Every `@modelcontextprotocol/*` package requires Node.js 20, where that global is always defined — this error means the process is running on an older runtime (Node.js 18 and earlier).

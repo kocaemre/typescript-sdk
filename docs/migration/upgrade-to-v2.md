@@ -639,6 +639,14 @@ server.registerTool('greet', { description: 'Greet a user', inputSchema: z.objec
 });
 ```
 
+Do not apply the v2 schema shape backwards to v1. On `@modelcontextprotocol/sdk`
+v1 <= 1.21, passing `z.object({ name: z.string() })` where a raw shape is expected can
+make `tools/list` fail with `Cannot read properties of null (reading '_def')`. On
+v1 <= 1.26, the deprecated positional `server.tool()` path can instead publish an
+empty schema (`{"type":"object"}`), so clients strip all tool arguments. Keep v1
+registrations on raw shapes like `{ name: z.string() }`; wrap those shapes with
+`z.object(...)` only when migrating the call to the v2 registration API.
+
 `registerResource` requires a `metadata` argument — pass `{}` if you have none.
 
 A tool or prompt registered **without** an `inputSchema` / `argsSchema` passes the
