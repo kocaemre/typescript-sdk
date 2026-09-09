@@ -686,6 +686,7 @@ export function createMcpHandler(factory: McpServerFactory, options: CreateMcpHa
 
     /** Modern per-request instances with an exchange still in flight (close() tears these down). */
     const inflight = new Set<Server>();
+    const closeTracked = new WeakSet<Server>();
     let closed = false;
 
     const reportError = (error: Error) => {
@@ -844,12 +845,17 @@ export function createMcpHandler(factory: McpServerFactory, options: CreateMcpHa
         }
 
         // Track the instance until its exchange tears down so close() can abort it.
-        const previousOnClose = server.onclose;
+        // The factory contract asks callers for a fresh instance per request, but
+        // avoid stacking an unbounded onclose wrapper chain if a caller reuses one.
         inflight.add(server);
-        server.onclose = () => {
-            inflight.delete(server);
-            previousOnClose?.();
-        };
+        if (!closeTracked.has(server)) {
+            const previousOnClose = server.onclose;
+            closeTracked.add(server);
+            server.onclose = () => {
+                inflight.delete(server);
+                previousOnClose?.();
+            };
+        }
 
         try {
             const response = await invoke(product, route.message, {

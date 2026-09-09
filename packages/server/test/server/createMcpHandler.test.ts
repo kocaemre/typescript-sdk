@@ -833,6 +833,26 @@ describe('createMcpHandler — handler faces', () => {
 });
 
 describe('createMcpHandler — close()', () => {
+    it('does not stack close wrappers when a factory reuses one modern server instance', async () => {
+        const product = new McpServer({ name: 'shared-entry-test-server', version: '1.0.0' });
+        const originalOnClose = vi.fn();
+        product.server.onclose = originalOnClose;
+        vi.spyOn(product.server, 'connect').mockRejectedValue(new Error('connect exploded'));
+        const handler = createMcpHandler(() => product, { onerror: vi.fn() });
+
+        const first = await handler.fetch(postRequest(modernToolsCall('echo', { text: 'first' })));
+        expect(first.status).toBe(500);
+        const firstTrackedOnClose = product.server.onclose;
+
+        const second = await handler.fetch(postRequest(modernToolsCall('echo', { text: 'second' })));
+        expect(second.status).toBe(500);
+        expect(product.server.onclose).toBe(firstTrackedOnClose);
+
+        const third = await handler.fetch(postRequest(modernToolsCall('echo', { text: 'third' })));
+        expect(third.status).toBe(500);
+        expect(product.server.onclose).toBe(firstTrackedOnClose);
+    });
+
     it('aborts in-flight modern exchanges and refuses further requests', async () => {
         const { factory } = testFactory();
         const handler = createMcpHandler(factory);
