@@ -758,10 +758,14 @@ export class StreamableHTTPClientTransport implements Transport {
                         break;
                     }
 
-                    // Update last event ID if provided
-                    if (event.id) {
+                    // Update last event ID if the field is present. Per the SSE
+                    // spec, an empty `id:` line clears the last event ID; do not
+                    // keep using a stale non-empty resumption token.
+                    if (event.id !== undefined) {
                         lastEventId = event.id;
-                        // Mark that we've received a priming event - stream is now resumable
+                        // Mark that we've received an ID field. An empty ID still
+                        // permits reconnecting, but must reconnect without a
+                        // Last-Event-ID header.
                         hasPrimingEvent = true;
                         onresumptiontoken?.(event.id);
                     }

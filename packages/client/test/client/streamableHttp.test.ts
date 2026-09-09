@@ -1356,6 +1356,55 @@ describe('StreamableHTTPClientTransport', () => {
             expect(postCall).toBeDefined();
         });
 
+        it('clears a stale resumption token when a stream sends an empty SSE id', async () => {
+            // ARRANGE
+            transport = new StreamableHTTPClientTransport(new URL('http://localhost:1234/mcp'), {
+                reconnectionOptions: {
+                    initialReconnectionDelay: 10,
+                    maxRetries: 1,
+                    maxReconnectionDelay: 1000,
+                    reconnectionDelayGrowFactor: 1
+                }
+            });
+
+            const streamWithClearedId = new ReadableStream({
+                start(controller) {
+                    controller.enqueue(new TextEncoder().encode('id: stale-token\ndata: \n\n'));
+                    controller.enqueue(new TextEncoder().encode('id:\ndata: \n\n'));
+                    controller.close();
+                }
+            });
+
+            const fetchMock = globalThis.fetch as Mock;
+            fetchMock.mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                headers: new Headers({ 'content-type': 'text/event-stream' }),
+                body: streamWithClearedId
+            });
+            fetchMock.mockResolvedValueOnce({
+                ok: false,
+                status: 405,
+                headers: new Headers()
+            });
+
+            const resumptionTokenSpy = vi.fn();
+
+            // ACT
+            await transport.start();
+            await transport.send(
+                { jsonrpc: '2.0', method: 'long_running_tool', id: 'request-1', params: {} },
+                { onresumptiontoken: resumptionTokenSpy }
+            );
+            await vi.advanceTimersByTimeAsync(50);
+
+            // ASSERT
+            expect(resumptionTokenSpy).toHaveBeenLastCalledWith('');
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            const reconnectHeaders = fetchMock.mock.calls[1]![1]?.headers;
+            expect(reconnectHeaders?.get('last-event-id')).toBeNull();
+        });
+
         it('should NOT reconnect a POST stream when response was received', async () => {
             // ARRANGE
             transport = new StreamableHTTPClientTransport(new URL('http://localhost:1234/mcp'), {
